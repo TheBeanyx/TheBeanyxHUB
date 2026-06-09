@@ -1,0 +1,268 @@
+
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Időjárás Előrejelzés</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --background: #f1f5f9;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--primary);
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            padding: 12px 20px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #1d4ed8;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .current-weather {
+            text-align: center;
+        }
+
+        .temp {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            font-size: 0.95rem;
+        }
+
+        .forecast-title {
+            margin-top: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .forecast-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .forecast-day {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card-bg);
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgb(0 0 0 / 0.05);
+        }
+
+        .error {
+            color: #dc2626;
+            text-align: center;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            display: none;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Időjárás Jelentés</h1>
+    
+    <div class="search-box">
+        <input type="text" id="cityInput" placeholder="Írd be a város nevét (pl. Szeged)..." value="Szeged">
+        <button onclick="getWeather()">Keresés</button>
+    </div>
+
+    <div id="loading" class="loading">Betöltés...</div>
+    <div id="errorMessage" class="error">A várost nem sikerült megtalálni. Kérlek próbáld újra!</div>
+
+    <div id="weatherCard" class="card">
+        <div class="current-weather">
+            <h2 id="cityName">Város neve</h2>
+            <div class="temp" id="currentTemp">--°C</div>
+            <div id="weatherStatus" style="font-weight: 500;">--</div>
+        </div>
+        
+        <div class="details">
+            <div>💧 Csapadék: <span id="precipitation">-- mm</span></div>
+            <div>💦 Páratartalom: <span id="humidity">-- %</span></div>
+            <div>💨 Szélsebesség: <span id="windSpeed">-- km/h</span></div>
+            <div>☀️ UV Index: <span id="uvIndex">--</span></div>
+        </div>
+    </div>
+
+    <div id="forecastCard" style="display: none;">
+        <div class="forecast-title">7 napos előrejelzés</div>
+        <div class="forecast-container" id="forecastContainer"></div>
+    </div>
+</div>
+
+<script>
+    // Időjárás kódok fordítása magyarra
+    const weatherCodes = {
+        0: "Tiszta égbolt",
+        1: "Főként tiszta", 2: "Közepesen felhős", 3: "Borult",
+        45: "Köd", 48: "Zúzmarás köd",
+        51: "Enyhe szitálás", 53: "Mérsékelt szitálás", 55: "Sűrű szitálás",
+        61: "Gyenge eső", 63: "Mérsékelt eső", 65: "Heves eső",
+        71: "Gyenge havazás", 73: "Mérsékelt havazás", 75: "Heves havazás",
+        77: "Hószemcsék",
+        80: "Gyenge zápor", 81: "Mérsékelt zápor", 82: "Heves zápor",
+        85: "Gyenge hózápor", 86: "Heves hózápor",
+        95: "Zivatar", 96: "Zivatar enyhe jégesővel", 99: "Zivatar heves jégesővel"
+    };
+
+    async function getWeather() {
+        const city = document.getElementById('cityInput').value.trim();
+        if (!city) return;
+
+        const loading = document.getElementById('loading');
+        const errorMsg = document.getElementById('errorMessage');
+        const weatherCard = document.getElementById('weatherCard');
+        const forecastCard = document.getElementById('forecastCard');
+
+        // Reset felület
+        loading.style.display = 'block';
+        errorMsg.style.display = 'none';
+        weatherCard.style.display = 'none';
+        forecastCard.style.display = 'none';
+
+        try {
+            // 1. Város koordinátáinak lekérése (Geocoding)
+            const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1`;
+            const geoResponse = await fetch(geoUrl);
+            const geoData = await geoResponse.json();
+
+            if (geoData.length === 0) {
+                throw new Error("City not found");
+            }
+
+            const lat = geoData[0].lat;
+            const lon = geoData[0].lon;
+            const displayName = geoData[0].display_name.split(',')[0]; // Csak a város neve kell
+
+            // 2. Időjárási adatok lekérése a koordináták alapján (Open-Meteo)
+            const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max&timezone=auto`;
+            const weatherResponse = await fetch(weatherUrl);
+            const weatherData = await weatherResponse.json();
+
+            // Adatok megjelenítése - Jelenlegi időjárás
+            document.getElementById('cityName').innerText = displayName;
+            document.getElementById('currentTemp').innerText = `${Math.round(weatherData.current.temperature_2m)}°C`;
+            document.getElementById('weatherStatus').innerText = weatherCodes[weatherData.current.weather_code] || "Ismeretlen";
+            document.getElementById('precipitation').innerText = `${weatherData.current.precipitation} mm`;
+            document.getElementById('humidity').innerText = `${weatherData.current.relative_humidity_2m}%`;
+            document.getElementById('windSpeed').innerText = `${weatherData.current.wind_speed_10m} km/h`;
+            document.getElementById('uvIndex').innerText = weatherData.daily.uv_index_max[0];
+
+            // 3. 7 napos előrejelzés generálása
+            const forecastContainer = document.getElementById('forecastContainer');
+            forecastContainer.innerHTML = ''; // Kiürítés
+
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(weatherData.daily.time[i]);
+                const dayName = date.toLocaleDateString('hu-HU', { weekday: 'long', month: 'short', day: 'numeric' });
+                const maxTemp = Math.round(weatherData.daily.temperature_2m_max[i]);
+                const minTemp = Math.round(weatherData.daily.temperature_2m_min[i]);
+                const rainSum = weatherData.daily.precipitation_sum[i];
+                const status = weatherCodes[weatherData.daily.weather_code[i]] || "Ismeretlen";
+
+                const forecastRow = document.createElement('div');
+                forecastRow.className = 'forecast-day';
+                forecastRow.innerHTML = `
+                    <div style="font-weight: bold; min-width: 130px;">${dayName}</div>
+                    <div style="flex: 1; text-align: left; color: #475569; font-size: 0.9rem; padding: 0 10px;">${status} ${rainSum > 0 ? `(💧${rainSum}mm)` : ''}</div>
+                    <div style="font-weight: 500;">${maxTemp}°C / <span style="color: #64748b;">${minTemp}°C</span></div>
+                `;
+                forecastContainer.appendChild(forecastRow);
+            }
+
+            // Kártyák megjelenítése
+            loading.style.display = 'none';
+            weatherCard.style.display = 'block';
+            forecastCard.style.display = 'block';
+
+        } catch (error) {
+            loading.style.display = 'none';
+            errorMsg.style.display = 'block';
+            console.error(error);
+        }
+    }
+
+    // Oldal betöltésekor automatikusan elindul a keresés Szegedre
+    window.onload = getWeather;
+</script>
+
+</body>
+</html>
